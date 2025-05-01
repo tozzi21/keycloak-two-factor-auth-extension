@@ -15,6 +15,10 @@ Validation is performed on all calls, following:
 2. User id as part of the path needs to point to valid user
 3. User must not be a service account
 
+### Path To Extension
+Reference the realm plus extension, for example:
+`/realms/master/two_factor_auth/manage-2fa/1ceeb65f-5426-4db1-b870-eddf2f7481be/generate-2fa`
+
 ### Generate 2FA data for a user
 Description: Generates 2FA data for a user to setup Totp on user's device.
 
