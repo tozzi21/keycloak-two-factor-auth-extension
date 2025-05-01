@@ -3,6 +3,8 @@ package org.prg.twofactorauth.rest;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.credential.CredentialProvider;
+import org.keycloak.models.SubjectCredentialManager;
+import org.keycloak.utils.CredentialHelper;
 import org.prg.twofactorauth.dto.TwoFactorAuthSecretData;
 import org.prg.twofactorauth.dto.TwoFactorAuthSubmission;
 import org.prg.twofactorauth.dto.TwoFactorAuthVerificationData;
@@ -13,18 +15,22 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.utils.Base32;
 import org.keycloak.models.utils.HmacOTP;
-import org.keycloak.utils.CredentialHelper;
 import org.keycloak.utils.TotpUtils;
 
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class User2FAResource {
 
 	private final KeycloakSession session;
     private final UserModel user;
-
+    final String CODE_SUCCESS          = "SUCCESS";
+    final String CODE_TOTP_NOT_ENABLED = "TOTP_NOT_ENABLED";
+    final String CODE_OPERATION_FAILED = "OPERATION_FAILED";
     public final int TotpSecretLength = 20;
 	
 	public User2FAResource(KeycloakSession session, UserModel user) {
@@ -106,6 +112,47 @@ public class User2FAResource {
         }
 
         return Response.noContent().build();
+    }
+
+    @POST
+    @NoCache
+    @Path("disable-totp")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response disableTotp() {
+        SubjectCredentialManager credManager = user.credentialManager();
+        List<CredentialModel> totpCreds = credManager
+                .getStoredCredentialsByTypeStream(OTPCredentialModel.TYPE)
+                .collect(Collectors.toList());
+        if (totpCreds.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of(
+                            "error", "TOTP is not enabled for this user",
+                            "code", CODE_TOTP_NOT_ENABLED
+                    ))
+                    .build();
+        }
+        try {
+            for (CredentialModel cred : totpCreds) {
+                boolean removed = credManager.removeStoredCredentialById(cred.getId());
+                if (!removed) {
+                    throw new RuntimeException("Failed to remove credential " + cred.getId());
+                }
+            }
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of(
+                            "error", "Failed to disable TOTP",
+                            "code", CODE_OPERATION_FAILED
+                    ))
+                    .build();
+        }
+        return Response.ok(Map.of(
+                "message", "TOTP disabled successfully",
+                "enabled", false,
+                "userId", user.getId(),
+                "code", CODE_SUCCESS
+        )).build();
     }
 
 }
